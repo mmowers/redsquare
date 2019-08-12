@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Page Title</title>
+<style>
+#counter{
+  color: blue;
+}
+#canvas{
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -10;
+}
+*{
+  margin: 0; padding: 0; border: 0; outline: none;
+}
+</style>
+</head>
+<body>
+<p>Use your arrow keys to avoid the red squares!</p>
+<div>
+  Your score is <span id="counter">0</span>
+</div>
+<canvas id="canvas"></canvas>
+<script>
+(function(){
+  function Character(width, x, y, color, type) {
+    this.width = width || 20; //pixels
+    this.x = x || 0; //pixels from left (of center of character)
+    this.y = y || 0; //pixels from top (of center of character)
+    this.color = color || 'black';
+    this.type = type || 'none';
+    this.direction = [0, 0];
+  }
+  Character.prototype.move = function(x, y) {
+    this.x += x;
+    this.y += y;
+  };
+  function Enemy(width, x, y, speed) {
+    Character.call(this, width, x, y, 'red', 'enemy');
+    this.speed = speed || 100; //pixels/second
+  }
+  Enemy.prototype = Object.create(Character.prototype);
+
+  function Player(width, x, y) {
+    Character.call(this, width, x, y, 'red', 'player');
+    this.speed = 600;
+    this.xv = 0 //0, -1, or 1, indicating whether we are moving in the x direction
+    this.yv = 0 //0, -1, or 1, indicating whether we are moving in the y direction
+  }
+  Player.prototype = Object.create(Character.prototype);
+
+  function Game(element, enemyInterval){
+    element.width = window.innerWidth;
+    element.height = window.innerHeight;
+    //set dom element as canvas
+    this.ctx = element.getContext("2d");
+    this.canvasW = element.width;
+    this.canvasH = element.height;
+
+    //set interval between repaints
+    this.compInterval = 10 //milleseconds per computer interval
+    this.compIntervalS = this.compInterval/1000; //seconds per computer interval
+
+    this.enemyInterval = enemyInterval || 3; //seconds per enemmy
+
+    this.startGame();
+  }
+  Game.prototype.startGame = function(){
+    //create players and enemies
+    this.intervalNumber = 0;
+    this.players = [];
+    this.players.push(new Player(20, this.canvasW/2, this.canvasH/2));
+    this.enemies = [];
+    this.characters = this.players.concat(this.enemies);
+
+    //paint initial board and advance time
+    this.paintBoard();
+    var thisGame = this;
+    this.intervalID = window.setInterval(function(){thisGame.advanceTime()}, this.compInterval); //Anonymous function is used because 'this' is set to 'window' inside of a setInterval callback.
+
+    //react to keypresses
+    document.onkeydown = function(e){thisGame.keydown(e)}; //'thisGame' is used because 'this' is set to 'document' inside of onkeydown callback
+    document.onkeyup = function(e){thisGame.keyup(e)}; //'thisGame' is used because 'this' is set to 'document' inside of onkeydown callback
+  }
+  Game.prototype.paintBoard = function(){
+    //first, paint the whole board white
+    this.ctx.fillStyle = "white";
+    this.ctx.fillRect(0, 0, this.canvasW, this.canvasH);
+    for(var i = 0; i < this.characters.length; i++){
+      this.ctx.fillStyle = this.characters[i].color;
+      this.ctx.fillRect(this.characters[i].x - this.characters[i].width/2, this.characters[i].y - this.characters[i].width/2, this.characters[i].width, this.characters[i].width);
+    }
+  };
+  Game.prototype.advanceTime = function(){
+    this.intervalNumber += 1;
+    this.movePlayers();
+    this.moveEnemies();
+    if(this.enemies.length < this.intervalNumber*this.compIntervalS/this.enemyInterval){
+      this.produceEnemy();
+    }
+    this.paintBoard(this.characters);
+    this.detectCollision();
+  }
+  Game.prototype.movePlayers = function(){
+    var distance = 0; //pixels per iteration
+    var displacementX = 0;
+    var displacementY = 0;
+    for(var i = 0; i < this.players.length; i++){
+      distance = this.players[i].speed*this.compIntervalS;
+      displacementX = 0;
+      displacementY = 0; 
+      if(this.players[i].xv && this.players[i].yv){
+        displacementX = this.players[i].xv * distance / Math.sqrt(2);
+        displacementY = this.players[i].yv * distance / Math.sqrt(2);
+      }
+      else if(this.players[i].xv){
+        displacementX = this.players[i].xv * distance / Math.sqrt(2);
+      }
+      else if(this.players[i].yv){
+        displacementY = this.players[i].yv * distance / Math.sqrt(2);
+      }
+      if(this.players[i].x + displacementX <= 0 || this.players[i].x + displacementX >= this.canvasW) displacementX = 0;
+      if(this.players[i].y + displacementY <= 0 || this.players[i].y + displacementY >= this.canvasH) displacementY = 0;
+      this.players[i].move(displacementX, displacementY);
+    }
+  }
+  Game.prototype.moveEnemies = function(){
+    var distance = 0; //pixels per iteration
+    var angle = 0;
+    var displacementX = 0;
+    var displacementY = 0;
+    for(var i = 0; i < this.enemies.length; i++){
+      angle = Math.atan(Math.abs((this.players[0].x - this.enemies[i].x) / (this.players[0].y - this.enemies[i].y)));
+      distance = this.enemies[i].speed*this.compIntervalS;
+      displacementX = distance*Math.sin(angle);
+      if(this.players[0].x - this.enemies[i].x < 0){
+        displacementX *= -1;
+      }
+      displacementY = distance*Math.cos(angle);
+      if(this.players[0].y - this.enemies[i].y < 0){
+        displacementY *= -1;
+      }
+      this.enemies[i].move(displacementX, displacementY);
+    }
+  }
+  Game.prototype.produceEnemy = function(){
+    var chooseSide = Math.random();
+    var x = Math.random()*this.canvasW;
+    var y = Math.random()*this.canvasH;
+    if(chooseSide < 0.25){
+      x = 0;
+    }else if(chooseSide < 0.5){
+      x = this.canvasW;
+    }else if(chooseSide < 0.75){
+      y = 0;
+    }else{
+      y = this.canvasH;
+    }
+    this.enemies.push(new Enemy(Math.random()*20 + 10, x, y, Math.random()*200+10));
+    this.characters = this.players.concat(this.enemies);
+    document.getElementById('counter').innerHTML = this.enemies.length;
+  }
+  Game.prototype.keydown = function(e){
+    switch (e.which) {
+      case 37:
+        this.players[0].xv = -1;
+        break;
+      case 38:
+        this.players[0].yv = -1;
+        break;
+      case 39:
+        this.players[0].xv = 1;
+        break;
+      case 40:
+        this.players[0].yv = 1;
+        break;
+      default:
+        break;
+    }
+  }
+  Game.prototype.keyup = function(e){
+    switch (e.which) {
+      case 37:
+        if(this.players[0].xv == -1) this.players[0].xv = 0;
+        break;
+      case 38:
+        if(this.players[0].yv == -1) this.players[0].yv = 0;
+        break;
+      case 39:
+        if(this.players[0].xv == 1) this.players[0].xv = 0;
+        break;
+      case 40:
+        if(this.players[0].yv == 1) this.players[0].yv = 0;
+        break;
+      default:
+        break;
+    }
+  }  
+  Game.prototype.detectCollision = function(){
+    for(var i = 0; i < this.enemies.length; i++){
+      if(Math.abs(this.enemies[i].x - this.players[0].x) < Math.abs(this.enemies[i].width/2 + this.players[0].width/2) &&
+         Math.abs(this.enemies[i].y - this.players[0].y) < Math.abs(this.enemies[i].width/2 + this.players[0].width/2)
+      ){
+        clearInterval(this.intervalID);
+        if (window.confirm('YOU HAVE BEEN OVERLAPPED BY A RED SQUARE!!! Your score is ' + this.enemies.length + ' on a ' + this.canvasW + ' px by ' + this.canvasH + ' px screen.' )) { 
+          this.startGame();
+        }
+      }
+    }
+  } 
+  var game = new Game(document.getElementById('canvas'), 0.25);
+
+})();
+</script>
+</body>
+</html>
