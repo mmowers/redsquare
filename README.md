@@ -1,0 +1,1 @@
+Red Squares that one must avoid overlapping
